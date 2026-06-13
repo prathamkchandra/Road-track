@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  CUSTOMER
+  RESORT_OWNER
+  VEHICLE_OWNER
+  GUIDE
+}
+
+enum PartnerType {
+  RESORT
+  VEHICLE
+  GUIDE
+}
+
+enum PartnerStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  CONFIRMED
+  CANCELLED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String?
+  phone           String?
+  role            UserRole  @default(CUSTOMER)
+  termsAcceptedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  otpTokens     OtpToken[]
+  partners      Partner[]
+  customerLeads Lead[]     @relation("CustomerLeads")
+  reviews       Review[]
+}
+
+model OtpToken {
+  id          String    @id @default(cuid())
+  email       String
+  codeHash    String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  attemptLeft Int       @default(3)
+  createdAt   DateTime  @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId String?
+
+  @@index([email, expiresAt])
+}
+
+model Partner {
+  id        String        @id @default(cuid())
+  type      PartnerType
+  status    PartnerStatus @default(PENDING)
+  legalName String
+  phone     String
+  notes     String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  resorts       Resort[]
+  vehicles      Vehicle[]
+  assignedLeads Lead[]
+  leadAssignments LeadAssignment[]
+}
+
+model Destination {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  region          String
+  description     String
+  bestTime        String
+  tripCostFrom    Int
+  distanceFromHub String
+  mapQuery        String
+  heroImageUrl    String
+  attractions     String[]
+  idealFor        String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  resorts  Resort[]
+  packages TourPackage[]
+  leads    Lead[]
+}
+
+model Resort {
+  id             String   @id @default(cuid())
+  name           String
+  location       String
+  priceFrom      Int
+  roomsAvailable Int      @default(0)
+  amenities      String[]
+  isSoldOut      Boolean  @default(false)
+  pricingVisible Boolean  @default(true)
+  rating         Decimal? @db.Decimal(2, 1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  partner       Partner     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partnerId     String
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  destinationId String
+
+  media   MediaAsset[]
+  reviews Review[]
+}
+
+model Vehicle {
+  id             String   @id @default(cuid())
+  name           String
+  vehicleType    String
+  seats          Int
+  driverName     String
+  driverPhone    String
+  ratePerDay     Int
+  packageRates   Json?
+  isAvailable    Boolean  @default(true)
+  pricingVisible Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partnerId String
+
+  media   MediaAsset[]
+  reviews Review[]
+}
+
+model TourPackage {
+  id          String   @id @default(cuid())
+  title       String
+  days        String
+  priceFrom   Int
+  includes    String[]
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  destinationId String
+}
+
+model Lead {
+  id          String     @id @default(cuid())
+  name        String
+  phone       String
+  email       String?
+  travelDate  DateTime?
+  people      Int
+  requirement String
+  status      LeadStatus @default(NEW)
+  quotedValue Int?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  customer   User?   @relation("CustomerLeads", fields: [customerId], references: [id], onDelete: SetNull)
+  customerId String?
+
+  destination   Destination? @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destinationId String?
+
+  assignedPartner   Partner? @relation(fields: [assignedPartnerId], references: [id], onDelete: SetNull)
+  assignedPartnerId String?
+
+  assignments LeadAssignment[]
+  commission  Commission?
+
+  @@index([status, createdAt])
+  @@index([phone])
+}
+
+model LeadAssignment {
+  id        String   @id @default(cuid())
+  note      String?
+  createdAt DateTime @default(now())
+
+  lead      Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId    String
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partnerId String
+
+  @@index([partnerId, createdAt])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String
+  createdAt DateTime @default(now())
+
+  reviewer   User?   @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewerId String?
+
+  resort   Resort? @relation(fields: [resortId], references: [id], onDelete: Cascade)
+  resortId String?
+
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String?
+}
+
+model Commission {
+  id             String   @id @default(cuid())
+  bookingValue   Int
+  commissionRate Decimal  @db.Decimal(4, 2)
+  commissionDue  Int
+  partnerAmount  Int
+  isSettled      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId String @unique
+}
+
+model MediaAsset {
+  id        String    @id @default(cuid())
+  type      MediaType
+  url       String
+  altText   String?
+  createdAt DateTime  @default(now())
+
+  resort   Resort? @relation(fields: [resortId], references: [id], onDelete: Cascade)
+  resortId String?
+
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String?
+}
